@@ -1,11 +1,19 @@
 from fastapi import FastAPI, Response
-from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from pathlib import Path
 import json
 import math
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 DATA_FILE = Path(__file__).parent.parent / "telemetry.json"
 
@@ -20,24 +28,17 @@ def p95(values):
     values = sorted(values)
     return values[math.ceil(0.95 * len(values)) - 1]
 
-def cors_response(data):
-    response = JSONResponse(content=data)
-    response.headers["Access-Control-Allow-Origin"] = "*"
-    response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
-    response.headers["Access-Control-Allow-Headers"] = "*"
-    return response
-
-@app.options("/")
-def options():
+@app.options("/{path:path}")
+def options_handler(path: str):
     response = Response(status_code=200)
     response.headers["Access-Control-Allow-Origin"] = "*"
-    response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
+    response.headers["Access-Control-Allow-Methods"] = "*"
     response.headers["Access-Control-Allow-Headers"] = "*"
     return response
 
 @app.get("/")
 def health():
-    return cors_response({"status": "ok"})
+    return {"status": "ok"}
 
 @app.post("/")
 def analyze(req: RequestBody):
@@ -59,4 +60,4 @@ def analyze(req: RequestBody):
             )
         }
 
-    return cors_response(result)
+    return result
