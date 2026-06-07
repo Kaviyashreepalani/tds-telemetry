@@ -1,28 +1,22 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
 from pydantic import BaseModel
+from pathlib import Path
 import json
 import math
-from pathlib import Path
 
 app = FastAPI()
 
-# CORS - allow any origin
+# CORS - allow ANY origin
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=False,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
 )
 
-# Handle preflight requests
-@app.options("/{rest_of_path:path}")
-def options_handler(rest_of_path: str):
-    return Response(status_code=200)
-
-# Load telemetry data
+# Load data
 DATA_FILE = Path(__file__).parent.parent / "telemetry.json"
 
 with open(DATA_FILE, "r", encoding="utf-8") as f:
@@ -34,11 +28,15 @@ class RequestBody(BaseModel):
 
 def p95(values):
     values = sorted(values)
-    idx = math.ceil(0.95 * len(values)) - 1
-    return values[idx]
+
+    if len(values) == 1:
+        return values[0]
+
+    index = math.ceil(0.95 * len(values)) - 1
+    return values[index]
 
 @app.get("/")
-def root():
+def health():
     return {"status": "ok"}
 
 @app.post("/")
