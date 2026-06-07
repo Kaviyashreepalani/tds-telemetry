@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from pydantic import BaseModel
 import json
 import math
@@ -7,7 +8,7 @@ from pathlib import Path
 
 app = FastAPI()
 
-# CORS - allow requests from ANY origin
+# CORS - allow any origin
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -16,41 +17,29 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Handle preflight requests
+@app.options("/{rest_of_path:path}")
+def options_handler(rest_of_path: str):
+    return Response(status_code=200)
+
 # Load telemetry data
 DATA_FILE = Path(__file__).parent.parent / "telemetry.json"
 
 with open(DATA_FILE, "r", encoding="utf-8") as f:
     DATA = json.load(f)
 
-
 class RequestBody(BaseModel):
     regions: list[str]
     threshold_ms: float
 
-
-def percentile_95(values):
+def p95(values):
     values = sorted(values)
-    n = len(values)
-
-    if n == 1:
-        return values[0]
-
-    index = math.ceil(0.95 * n) - 1
-    return values[index]
-
+    idx = math.ceil(0.95 * len(values)) - 1
+    return values[idx]
 
 @app.get("/")
 def root():
-    return {
-        "status": "ok",
-        "message": "Telemetry Analytics API"
-    }
-
-
-@app.options("/")
-def options():
     return {"status": "ok"}
-
 
 @app.post("/")
 def analyze(req: RequestBody):
@@ -73,10 +62,11 @@ def analyze(req: RequestBody):
 
         result[region] = {
             "avg_latency": sum(latencies) / len(latencies),
-            "p95_latency": percentile_95(latencies),
+            "p95_latency": p95(latencies),
             "avg_uptime": sum(uptimes) / len(uptimes),
             "breaches": sum(
-                1 for r in rows
+                1
+                for r in rows
                 if r["latency_ms"] > req.threshold_ms
             )
         }
