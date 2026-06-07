@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from pathlib import Path
@@ -18,25 +18,26 @@ class RequestBody(BaseModel):
 
 def p95(values):
     values = sorted(values)
-    idx = math.ceil(0.95 * len(values)) - 1
-    return values[idx]
+    return values[math.ceil(0.95 * len(values)) - 1]
 
-CORS_HEADERS = {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "*"
-}
+def cors_response(data):
+    response = JSONResponse(content=data)
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "*"
+    return response
 
 @app.options("/")
-def options_root():
-    return JSONResponse({}, headers=CORS_HEADERS)
+def options():
+    response = Response(status_code=200)
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "*"
+    return response
 
 @app.get("/")
 def health():
-    return JSONResponse(
-        {"status": "ok"},
-        headers=CORS_HEADERS
-    )
+    return cors_response({"status": "ok"})
 
 @app.post("/")
 def analyze(req: RequestBody):
@@ -58,4 +59,4 @@ def analyze(req: RequestBody):
             )
         }
 
-    return JSONResponse(result, headers=CORS_HEADERS)
+    return cors_response(result)
