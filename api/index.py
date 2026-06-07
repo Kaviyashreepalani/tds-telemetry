@@ -1,20 +1,12 @@
 from fastapi import FastAPI, Response
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from pathlib import Path
 import json
-import math
 
 app = FastAPI()
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
+# Load telemetry data
 DATA_FILE = Path(__file__).parent.parent / "telemetry.json"
 
 with open(DATA_FILE, "r", encoding="utf-8") as f:
@@ -24,21 +16,35 @@ class RequestBody(BaseModel):
     regions: list[str]
     threshold_ms: float
 
-def p95(values):
+def percentile(values, p):
     values = sorted(values)
-    return values[math.ceil(0.95 * len(values)) - 1]
+    n = len(values)
 
-@app.options("/{path:path}")
-def options_handler(path: str):
-    response = Response(status_code=200)
+    if n == 1:
+        return values[0]
+
+    pos = (p / 100) * (n - 1)
+
+    lower = int(pos)
+    upper = min(lower + 1, n - 1)
+
+    weight = pos - lower
+
+    return values[lower] * (1 - weight) + values[upper] * weight
+
+def add_cors(response):
     response.headers["Access-Control-Allow-Origin"] = "*"
-    response.headers["Access-Control-Allow-Methods"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
     response.headers["Access-Control-Allow-Headers"] = "*"
     return response
 
+@app.options("/")
+def options_handler():
+    return add_cors(Response(status_code=200))
+
 @app.get("/")
 def health():
-    return {"status": "ok"}
+    return add_cors(JSONResponse({"status": "ok"}))
 
 @app.post("/")
 def analyze(req: RequestBody):
@@ -47,17 +53,27 @@ def analyze(req: RequestBody):
     for region in req.regions:
         rows = [r for r in DATA if r["region"] == region]
 
+        if not rows:
+            result[region] = {
+                "avg_latency": 0,
+                "p95_latency": 0,
+                "avg_uptime": 0,
+                "breaches": 0
+            }
+            continue
+
         latencies = [r["latency_ms"] for r in rows]
         uptimes = [r["uptime_pct"] for r in rows]
 
         result[region] = {
             "avg_latency": sum(latencies) / len(latencies),
-            "p95_latency": p95(latencies),
+            "p95_latency": percentile(latencies, 95),
             "avg_uptime": sum(uptimes) / len(uptimes),
             "breaches": sum(
-                1 for r in rows
+                1
+                for r in rows
                 if r["latency_ms"] > req.threshold_ms
             )
         }
 
-    return result
+    return add_cors(JSONResponse(result))
