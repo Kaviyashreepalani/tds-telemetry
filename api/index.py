@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from pathlib import Path
 import json
@@ -7,16 +7,6 @@ import math
 
 app = FastAPI()
 
-# CORS - allow ANY origin
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
-    allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["*"],
-)
-
-# Load data
 DATA_FILE = Path(__file__).parent.parent / "telemetry.json"
 
 with open(DATA_FILE, "r", encoding="utf-8") as f:
@@ -28,16 +18,25 @@ class RequestBody(BaseModel):
 
 def p95(values):
     values = sorted(values)
+    idx = math.ceil(0.95 * len(values)) - 1
+    return values[idx]
 
-    if len(values) == 1:
-        return values[0]
+CORS_HEADERS = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "*"
+}
 
-    index = math.ceil(0.95 * len(values)) - 1
-    return values[index]
+@app.options("/")
+def options_root():
+    return JSONResponse({}, headers=CORS_HEADERS)
 
 @app.get("/")
 def health():
-    return {"status": "ok"}
+    return JSONResponse(
+        {"status": "ok"},
+        headers=CORS_HEADERS
+    )
 
 @app.post("/")
 def analyze(req: RequestBody):
@@ -45,15 +44,6 @@ def analyze(req: RequestBody):
 
     for region in req.regions:
         rows = [r for r in DATA if r["region"] == region]
-
-        if not rows:
-            result[region] = {
-                "avg_latency": 0,
-                "p95_latency": 0,
-                "avg_uptime": 0,
-                "breaches": 0
-            }
-            continue
 
         latencies = [r["latency_ms"] for r in rows]
         uptimes = [r["uptime_pct"] for r in rows]
@@ -63,10 +53,9 @@ def analyze(req: RequestBody):
             "p95_latency": p95(latencies),
             "avg_uptime": sum(uptimes) / len(uptimes),
             "breaches": sum(
-                1
-                for r in rows
+                1 for r in rows
                 if r["latency_ms"] > req.threshold_ms
             )
         }
 
-    return result
+    return JSONResponse(result, headers=CORS_HEADERS)
